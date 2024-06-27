@@ -25,13 +25,13 @@ jobs:
         env:
           CARGO_TERM_COLOR: always
         run: |
-          cargo nextest run
+          cargo nextest run --profile ci
      
       - name: Report unit test results
         uses: dorny/test-reporter@v1
         if: success() || failure()    # run this step even if previous step failed
         with:          
-          path: target/nextest/default/*.xml
+          path: target/nextest/ci/*.xml
           reporter: java-junit
           max-annotations: 50
           name: Test Suite Summary
