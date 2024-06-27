@@ -1,0 +1,9 @@
+/target 
+/.vscode 
+/.github 
+Dockerfile 
+.dockerignore 
+/.git 
+.gitignore 
+/config/secrets.toml
+.DS_Store
