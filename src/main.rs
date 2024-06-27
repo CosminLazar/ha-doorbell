@@ -16,6 +16,9 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, mpsc::Receiver, mpsc::Sender};
 use tokio::try_join;
 use tokio_tungstenite::{connect_async, WebSocketStream};
+use tracing::{info, level_filters::LevelFilter, warn};
+use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 lazy_static! {
     static ref TOKEN: String =
@@ -62,7 +65,16 @@ async fn ws_outgoing_messages(
 
 #[tokio::main]
 async fn main() {
-    println!("Connecting to - {}", HOME_ASSISTANT_WEB_SOCKET_URL);
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        .init();
+
+    info!("Connecting to - {}", HOME_ASSISTANT_WEB_SOCKET_URL);
     let (wsclient, _) = connect_async(HOME_ASSISTANT_WEB_SOCKET_URL)
         .await
         .expect("Failed to connect");
@@ -82,13 +94,14 @@ async fn main() {
     let write_handle = tokio::spawn(ws_outgoing_messages(sink, from_user));
 
     let mut client = HassClient::new(to_gateway, from_gateway);
-    println!("Client created\n");
+    info!("Client created\n");
+
     client
-        .auth_with_longlivedtoken(&*TOKEN)
+        .auth_with_longlivedtoken(&TOKEN)
         .await
         .expect("Not able to autheticate");
 
-    println!("WebSocket connection and authethication works\n");
+    info!("WebSocket connection and authethication works\n");
 
     let _x = client
         .subscribe_event("state_changed")
@@ -113,14 +126,20 @@ async fn main() {
                         .new_state
                         .is_some_and(|x| x.state.eq("on"))
                     {
-                        println!("Ding dong!");
-                        let _ = play_ding_dong(&mut client).await;
-                        let _ = send_notification(&mut client).await;
+                        info!("Ding dong!");
+
+                        let _ = play_ding_dong(&mut client)
+                            .await
+                            .inspect_err(|err| warn!(err));
+
+                        let _ = send_notification(&mut client)
+                            .await
+                            .inspect_err(|err| warn!(err));
                     }
                 }
             }
 
-            None => println!("Wrong event received: {:?}", message),
+            None => warn!("Wrong event received: {:?}", message),
         }
     }
 
