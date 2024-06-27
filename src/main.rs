@@ -119,23 +119,21 @@ async fn main() {
                     .data
                     .entity_id
                     .is_some_and(|x| x.eq("sensor.entrance_doorbell_action"))
-                {
-                    if message
+                    && message
                         .event
                         .data
                         .new_state
                         .is_some_and(|x| x.state.eq("on"))
-                    {
-                        info!("Ding dong!");
+                {
+                    info!("Ding dong!");
 
-                        let _ = play_ding_dong(&mut client)
-                            .await
-                            .inspect_err(|err| warn!(err));
+                    let _ = play_ding_dong(&mut client)
+                        .await
+                        .inspect_err(|err| warn!(err));
 
-                        let _ = send_notification(&mut client)
-                            .await
-                            .inspect_err(|err| warn!(err));
-                    }
+                    let _ = send_notification(&mut client)
+                        .await
+                        .inspect_err(|err| warn!(err));
                 }
             }
 
@@ -242,4 +240,17 @@ async fn upload_and_get_public_url(bytes: Bytes) -> Result<String, String> {
         .map_err(|err| format!("Failed to build pre-signed url: {}", err))?;
 
     Ok(p.uri().to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn this_is_where_i_would_put_my_tests_if_i_had_any() {
+        let condition = true;
+        assert!(
+            condition,
+            "This is where I would put my tests if I had any!"
+        );
+    }
 }
