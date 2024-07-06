@@ -11,12 +11,15 @@ use hass_rs::client::{check_if_event, HassClient};
 use hass_rs::WSEvent;
 use lazy_static::lazy_static;
 use serde_json::json;
-use std::{env::var, time::Duration};
-use tokio::io::{AsyncRead, AsyncWrite};
+use std::{env::var, io::BufRead, time::Duration};
 use tokio::sync::{mpsc, mpsc::Receiver, mpsc::Sender};
-use tokio::try_join;
+// use tokio::try_join;
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    select,
+};
 use tokio_tungstenite::{connect_async, WebSocketStream};
-use tracing::{info, level_filters::LevelFilter, warn};
+use tracing::{error, info, level_filters::LevelFilter, warn};
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -33,22 +36,30 @@ async fn ws_incoming_messages(
     to_user: Sender<Result<Message, Error>>,
     event_sender: Sender<WSEvent>,
 ) {
-    loop {
-        while let Some(message) = stream.next().await {
-            // check if it is a WSEvent, if so send to the spawned tokio task, that should handle the event
-            // otherwise process the message and respond accordingly
-            match check_if_event(&message) {
-                Ok(event) => {
-                    let _ = event_sender.send(event).await;
-                    continue;
+    // loop {
+    while let Some(message) = stream.next().await {
+        // check if it is a WSEvent, if so send to the spawned tokio task, that should handle the event
+        // otherwise process the message and respond accordingly
+        match check_if_event(&message) {
+            Ok(event) => {
+                let _ = event_sender.send(event).await;
+                continue;
+            }
+            _ => {
+                //early exit in case of error
+                //will it work?
+                if message.is_err() {
+                    break;
                 }
-                _ => {
-                    let _ = to_user.send(message).await;
-                    continue;
-                }
+
+                let _ = to_user.send(message).await;
+                continue;
             }
         }
     }
+    info!("Connection closed???");
+
+    // }
 }
 
 async fn ws_outgoing_messages(
@@ -109,7 +120,6 @@ async fn main() {
         .expect("Cannot subscribe to state_changed!");
 
     let subscriptions = client.subscriptions.clone();
-
     while let Some(message) = event_receiver.recv().await {
         // process only events you have subscribed to
         match subscriptions.get(&message.id) {
@@ -141,10 +151,13 @@ async fn main() {
         }
     }
 
-    let _ = try_join!(read_handle, write_handle);
+    info!("Shutting down...");
+    // let _ = try_join!(read_handle, write_handle);
 }
 
 async fn play_ding_dong(client: &mut HassClient) -> Result<(), String> {
+    info!("Playing ding dong!");
+
     client
         .call_service(
             "media_player".to_owned(),
@@ -162,6 +175,8 @@ async fn play_ding_dong(client: &mut HassClient) -> Result<(), String> {
 }
 
 async fn send_notification(client: &mut HassClient) -> Result<(), String> {
+    info!("Sending notification!");
+
     let picture = snap_picture().await.unwrap();
     let url = upload_and_get_public_url(picture).await?;
 
@@ -170,9 +185,10 @@ async fn send_notification(client: &mut HassClient) -> Result<(), String> {
             "notify".to_owned(),
             "all_mobile_phones".to_owned(),
             Some(json!({
-                "message":"There is someone at the door!",
+                "message":"There is someone at the door2!",
                 "title": "Ding Dong",
                 "data":{
+                    // "entity_id":"camera.entrance_medium_resolution_channel",
                     "push":{
                         "sound":{
                             "name":"RingtoneDucked_US_Haptic.caf",
@@ -183,6 +199,7 @@ async fn send_notification(client: &mut HassClient) -> Result<(), String> {
                     "attachment":{
                         "url": url,
                         "content-type":"jpeg",
+                        // "content-type":"video",
                         "hide-thumbnail":false
                     },
                     "actions":[
