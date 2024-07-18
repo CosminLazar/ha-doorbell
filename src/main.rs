@@ -120,36 +120,86 @@ async fn main() {
         .expect("Cannot subscribe to state_changed!");
 
     let subscriptions = client.subscriptions.clone();
-    while let Some(message) = event_receiver.recv().await {
-        // process only events you have subscribed to
-        match subscriptions.get(&message.id) {
-            Some(_) => {
-                if message
-                    .event
-                    .data
-                    .entity_id
-                    .is_some_and(|x| x.eq("sensor.entrance_doorbell_action"))
-                    && message
-                        .event
-                        .data
-                        .new_state
-                        .is_some_and(|x| x.state.eq("on"))
-                {
-                    info!("Ding dong!");
+    //timer that ticks every 60 seconds
+    let mut interval = tokio::time::interval(Duration::from_secs(60));
+    loop {
+        select! {
+          event =  event_receiver.recv()=> {
+            if let Some(message) = event {
+                // process only events you have subscribed to
+                match subscriptions.get(&message.id) {
+                    Some(_) => {
+                        if message
+                            .event
+                            .data
+                            .entity_id
+                            .is_some_and(|x| x.eq("sensor.entrance_doorbell_action"))
+                            && message
+                                .event
+                                .data
+                                .new_state
+                                .is_some_and(|x| x.state.eq("on"))
+                        {
+                            info!("Ding dong!");
 
-                    let _ = play_ding_dong(&mut client)
-                        .await
-                        .inspect_err(|err| warn!(err));
+                            let _ = play_ding_dong(&mut client)
+                                .await
+                                .inspect_err(|err| warn!(err));
 
-                    let _ = send_notification(&mut client)
-                        .await
-                        .inspect_err(|err| warn!(err));
-                }
+                            let _ = send_notification(&mut client)
+                                .await
+                                .inspect_err(|err| warn!(err));
+                        }
+                    }
+
+                    None => warn!("Wrong event received: {:?}", message),
+                }}
+            else{
+                break;
             }
+            },
+            _ = interval.tick() => {
+                info!("Pinging the server!");
+              let res=  client.ping().await;//.expect("Ping failed");
 
-            None => warn!("Wrong event received: {:?}", message),
+              if res.is_err(){
+                  error!("Ping failed {}", res.err().unwrap());
+                 // break;
+              }
+            }
         }
     }
+
+    // while let Some(message) = event_receiver.recv().await {
+    //     // process only events you have subscribed to
+    //     match subscriptions.get(&message.id) {
+    //         Some(_) => {
+    //             if message
+    //                 .event
+    //                 .data
+    //                 .entity_id
+    //                 .is_some_and(|x| x.eq("sensor.entrance_doorbell_action"))
+    //                 && message
+    //                     .event
+    //                     .data
+    //                     .new_state
+    //                     .is_some_and(|x| x.state.eq("on"))
+    //             {
+    //                 info!("Ding dong!");
+
+    //                 let _ = play_ding_dong(&mut client)
+    //                     .await
+    //                     .inspect_err(|err| warn!(err));
+
+    //                 let _ = send_notification(&mut client)
+    //                     .await
+    //                     .inspect_err(|err| warn!(err));
+    //             }
+    //         }
+
+    //         None => warn!("Wrong event received: {:?}", message),
+    //     }
+    // }
 
     info!("Shutting down...");
     // let _ = try_join!(read_handle, write_handle);
